@@ -19,7 +19,7 @@ from ann_benchmarks.results import store_results
 
 
 def run_individual_query(algo, X_train, X_test, distance, count, run_count,
-                         batch):
+                         batch, batch_nq=100):
     prepared_queries = \
         (batch and hasattr(algo, "prepare_batch_query")) or \
         ((not batch) and hasattr(algo, "prepare_query"))
@@ -45,7 +45,8 @@ def run_individual_query(algo, X_train, X_test, distance, count, run_count,
                           for idx in candidates]
             n_items_processed[0] += 1
             if n_items_processed[0] % 1000 == 0:
-                print('Processed %d/%d queries...' % (n_items_processed[0], len(X_test)))
+                print('Processed %d/%d queries...' %
+                      (n_items_processed[0], len(X_test)))
             if len(candidates) > count:
                 print('warning: algorithm %s returned %d results, but count'
                       ' is only %d)' % (algo, len(candidates), count))
@@ -66,9 +67,14 @@ def run_individual_query(algo, X_train, X_test, distance, count, run_count,
                            for idx in single_results]
                           for v, single_results in zip(X, results)]
             return [(total / float(len(X)), v) for v in candidates]
-
+        nq = len(X_test)
         if batch:
-            results = batch_query(X_test)
+            # results = batch_query(X_test)
+            results = []
+            for i in range(0, nq, batch_nq):
+                j = min(nq, i + batch_nq)
+                result = batch_query(X_test[i:j])
+                results.extend(result)
         else:
             results = [single_query(x) for x in X_test]
 
@@ -95,10 +101,10 @@ def run_individual_query(algo, X_train, X_test, distance, count, run_count,
     return (attrs, results)
 
 
-def run(definition, dataset, count, run_count, batch):
+def run(definition, dataset, count, run_count, batch, batch_nq=100):
     algo = instantiate_algorithm(definition)
     assert not definition.query_argument_groups \
-           or hasattr(algo, "set_query_arguments"), """\
+        or hasattr(algo, "set_query_arguments"), """\
 error: query argument groups have been specified for %s.%s(%s), but the \
 algorithm instantiated from it does not implement the set_query_arguments \
 function""" % (definition.module, definition.constructor, definition.arguments)
@@ -137,7 +143,7 @@ function""" % (definition.module, definition.constructor, definition.arguments)
             if query_arguments:
                 algo.set_query_arguments(*query_arguments)
             descriptor, results = run_individual_query(
-                algo, X_train, X_test, distance, count, run_count, batch)
+                algo, X_train, X_test, distance, count, run_count, batch, batch_nq)
             descriptor["build_time"] = build_time
             descriptor["index_size"] = index_size
             descriptor["algo"] = definition.algorithm
@@ -186,9 +192,14 @@ def run_from_cmdline():
         help='If flag included, algorithms will be run in batch mode, rather than "individual query" mode.',
         action='store_true')
     parser.add_argument(
+        '--batch_nq',
+        help='',
+        type='int'
+    )
+    parser.add_argument(
         'build',
         help='JSON of arguments to pass to the constructor. E.g. ["angular", 100]'
-        )
+    )
     parser.add_argument(
         'queries',
         help='JSON of arguments to pass to the queries. E.g. [100]',
@@ -208,7 +219,8 @@ def run_from_cmdline():
         query_argument_groups=query_args,
         disabled=False
     )
-    run(definition, args.dataset, args.count, args.runs, args.batch)
+    run(definition, args.dataset, args.count,
+        args.runs, args.batch)
 
 
 def run_docker(definition, dataset, count, runs, timeout, batch, cpu_limit,
@@ -244,7 +256,7 @@ def run_docker(definition, dataset, count, runs, timeout, batch, cpu_limit,
         detach=True)
     logger = logging.getLogger(f"annb.{container.short_id}")
 
-    logger.info('Created container %s: CPU limit %s, mem limit %s, timeout %d, command %s' % \
+    logger.info('Created container %s: CPU limit %s, mem limit %s, timeout %d, command %s' %
                 (container.short_id, cpu_limit, mem_limit, timeout, cmd))
 
     def stream_logs():
@@ -258,18 +270,22 @@ def run_docker(definition, dataset, count, runs, timeout, batch, cpu_limit,
         return_value = container.wait(timeout=timeout)
         _handle_container_return_value(return_value, container, logger)
     except:
-        logger.error('Container.wait for container %s failed with exception' % container.short_id)
+        logger.error(
+            'Container.wait for container %s failed with exception' % container.short_id)
         traceback.print_exc()
     finally:
         container.remove(force=True)
 
+
 def _handle_container_return_value(return_value, container, logger):
     base_msg = 'Child process for container %s' % (container.short_id)
-    if type(return_value) is dict: # The return value from container.wait changes from int to dict in docker 3.0.0
+    # The return value from container.wait changes from int to dict in docker 3.0.0
+    if type(return_value) is dict:
         error_msg = return_value['Error']
         exit_code = return_value['StatusCode']
-        msg = base_msg + 'returned exit code %d with message %s' %(exit_code, error_msg)
-    else: 
+        msg = base_msg + \
+            'returned exit code %d with message %s' % (exit_code, error_msg)
+    else:
         exit_code = return_value
         msg = base_msg + 'returned exit code %d' % (exit_code)
 

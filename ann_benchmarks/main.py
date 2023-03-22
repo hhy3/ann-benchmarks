@@ -40,7 +40,8 @@ def run_worker(cpu, args, queue):
             run(definition, args.dataset, args.count, args.runs, args.batch)
         else:
             memory_margin = 500e6  # reserve some extra memory for misc stuff
-            mem_limit = int((psutil.virtual_memory().available - memory_margin) / args.parallelism)
+            mem_limit = int((psutil.virtual_memory().available -
+                            memory_margin) / args.parallelism)
             cpu_limit = str(cpu)
             if args.batch:
                 cpu_limit = "0-%d" % (multiprocessing.cpu_count() - 1)
@@ -108,6 +109,12 @@ def main():
         '--batch',
         action='store_true',
         help='If set, algorithms get all queries at once')
+    parser.add_argument(
+        '--batch_nq',
+        help='',
+        type=int,
+        default=1
+    )
     parser.add_argument(
         '--max-n-algorithms',
         type=int,
@@ -189,7 +196,8 @@ def main():
                 d for d in definitions if d.docker_tag == args.docker_tag]
 
         if set(d.docker_tag for d in definitions).difference(docker_tags):
-            logger.info(f'not all docker images available, only: {set(docker_tags)}')
+            logger.info(
+                f'not all docker images available, only: {set(docker_tags)}')
             logger.info(f'missing docker images: '
                         f'{str(set(d.docker_tag for d in definitions).difference(docker_tags))}')
             definitions = [
@@ -210,8 +218,8 @@ def main():
                 # of a missing dependency), print a warning and remove
                 # this definition from the list of things to be run
                 logging.warning("%s.%s(%s): the module '%s' could not be "
-                      "loaded; skipping" % (df.module, df.constructor,
-                                            df.arguments, df.module))
+                                "loaded; skipping" % (df.module, df.constructor,
+                                                      df.arguments, df.module))
                 return False
             else:
                 return True
@@ -219,7 +227,8 @@ def main():
 
     if not args.run_disabled:
         if len([d for d in definitions if d.disabled]):
-            logger.info(f'Not running disabled algorithms {[d for d in definitions if d.disabled]}')
+            logger.info(
+                f'Not running disabled algorithms {[d for d in definitions if d.disabled]}')
         definitions = [d for d in definitions if not d.disabled]
 
     if args.max_n_algorithms >= 0:
@@ -231,14 +240,16 @@ def main():
         logger.info(f'Order: {definitions}')
 
     if args.parallelism > multiprocessing.cpu_count() - 1:
-        raise Exception('Parallelism larger than %d! (CPU count minus one)' % (multiprocessing.cpu_count() - 1))
+        raise Exception('Parallelism larger than %d! (CPU count minus one)' % (
+            multiprocessing.cpu_count() - 1))
 
     # Multiprocessing magic to farm this out to all CPUs
     queue = multiprocessing.Queue()
     for definition in definitions:
         queue.put(definition)
     if args.batch and args.parallelism > 1:
-        raise Exception(f"Batch mode uses all available CPU resources, --parallelism should be set to 1. (Was: {args.parallelism})")
+        raise Exception(
+            f"Batch mode uses all available CPU resources, --parallelism should be set to 1. (Was: {args.parallelism})")
     workers = [multiprocessing.Process(target=run_worker, args=(i+1, args, queue))
                for i in range(args.parallelism)]
     [worker.start() for worker in workers]
