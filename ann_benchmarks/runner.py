@@ -19,7 +19,7 @@ from ann_benchmarks.results import store_results
 
 
 def run_individual_query(algo, X_train, X_test, distance, count, run_count,
-                         batch, batch_nq=100):
+                         batch, batch_nq=0):
     prepared_queries = \
         (batch and hasattr(algo, "prepare_batch_query")) or \
         ((not batch) and hasattr(algo, "prepare_query"))
@@ -71,6 +71,8 @@ def run_individual_query(algo, X_train, X_test, distance, count, run_count,
         if batch:
             # results = batch_query(X_test)
             results = []
+            if batch_nq == 0:
+                batch_nq = nq
             for i in range(0, nq, batch_nq):
                 j = min(nq, i + batch_nq)
                 result = batch_query(X_test[i:j])
@@ -101,7 +103,7 @@ def run_individual_query(algo, X_train, X_test, distance, count, run_count,
     return (attrs, results)
 
 
-def run(definition, dataset, count, run_count, batch, batch_nq=100):
+def run(definition, dataset, count, run_count, batch, batch_nq=0):
     algo = instantiate_algorithm(definition)
     assert not definition.query_argument_groups \
         or hasattr(algo, "set_query_arguments"), """\
@@ -220,7 +222,7 @@ def run_from_cmdline():
         disabled=False
     )
     run(definition, args.dataset, args.count,
-        args.runs, args.batch)
+        args.runs, args.batch, args.batch_nq)
 
 
 def run_docker(definition, dataset, count, runs, timeout, batch, cpu_limit,
